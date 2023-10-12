@@ -1,0 +1,1024 @@
+---
+title: "NFL Project"
+author: "Dillon Koestler"
+date: "2023-04-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#source("Data_scraping_v1.R")
+```
+
+```{r, warning=FALSE}
+## Load libraries
+
+library(rvest)
+library(stringr)
+library(tidyverse)
+library(readr)
+library(ggplot2)
+library(plotly)
+library(ggcorrplot)
+library(car)
+library(leaps)
+library(ggpubr)
+library(rstatix)
+library(gridExtra)
+library(vip)
+```
+
+```{r, message=FALSE}
+#### Data scraping and cleaning
+
+## Spending
+
+# Pick a url to scrape 
+Spending_URL <- read_html("https://overthecap.com/positional-spending")
+
+# Grab table of values and store as text
+Spending = Spending_URL %>% html_nodes("table")
+Spending = Spending %>% html_table
+
+#Spending is a list of 14 tables, one for each year 2013-2026
+Spending_13 = Spending[[1]]
+Spending_14 = Spending[[2]]
+Spending_15 = Spending[[3]]
+Spending_16 = Spending[[4]]
+Spending_17 = Spending[[5]]
+Spending_18 = Spending[[6]]
+Spending_19 = Spending[[7]]
+Spending_20 = Spending[[8]]
+Spending_21 = Spending[[9]]
+Spending_22 = Spending[[10]]
+Spending_23 = Spending[[11]]
+Spending_24 = Spending[[12]]
+Spending_25 = Spending[[13]]
+Spending_26 = Spending[[14]]
+
+#Parse characters in Spending as numeric
+Spending_Parse = function(x){
+  x = x %>% mutate(QB=parse_number(QB), 
+                     RB=parse_number(RB), 
+                     WR=parse_number(WR), 
+                     TE=parse_number(TE), 
+                     OL=parse_number(OL),
+                     Offense=parse_number(Offense),
+                     IDL=parse_number(IDL),
+                     EDGE=parse_number(EDGE),
+                     LB=parse_number(LB),
+                     S=parse_number(S),
+                     CB=parse_number(CB),
+                     Defense=parse_number(Defense))
+}
+Spending_13 = Spending_Parse(Spending_13)
+Spending_14 = Spending_Parse(Spending_14)
+Spending_15 = Spending_Parse(Spending_15)
+Spending_16 = Spending_Parse(Spending_16)
+Spending_17 = Spending_Parse(Spending_17)
+Spending_18 = Spending_Parse(Spending_18)
+Spending_19 = Spending_Parse(Spending_19)
+Spending_20 = Spending_Parse(Spending_20)
+Spending_21 = Spending_Parse(Spending_21)
+Spending_22 = Spending_Parse(Spending_22)
+Spending_23 = Spending_Parse(Spending_23)
+Spending_24 = Spending_Parse(Spending_24)
+Spending_25 = Spending_Parse(Spending_25)
+Spending_26 = Spending_Parse(Spending_26)
+
+# Add year column to Spending
+Spending_13 = cbind(Spending_13, "2013")
+Spending_14 = cbind(Spending_14, "2014")
+Spending_15 = cbind(Spending_15, "2015")
+Spending_16 = cbind(Spending_16, "2016")
+Spending_17 = cbind(Spending_17, "2017")
+Spending_18 = cbind(Spending_18, "2018")
+Spending_19 = cbind(Spending_19, "2019")
+Spending_20 = cbind(Spending_20, "2020")
+Spending_21 = cbind(Spending_21, "2021")
+Spending_22 = cbind(Spending_22, "2022")
+Spending_23 = cbind(Spending_23, "2023")
+Spending_24 = cbind(Spending_24, "2024")
+Spending_25 = cbind(Spending_25, "2025")
+Spending_26 = cbind(Spending_26, "2026")
+
+colnames(Spending_13)[14] = "Year"
+colnames(Spending_14)[14] = "Year"
+colnames(Spending_15)[14] = "Year"
+colnames(Spending_16)[14] = "Year"
+colnames(Spending_17)[14] = "Year"
+colnames(Spending_18)[14] = "Year"
+colnames(Spending_19)[14] = "Year"
+colnames(Spending_20)[14] = "Year"
+colnames(Spending_21)[14] = "Year"
+colnames(Spending_22)[14] = "Year"
+colnames(Spending_23)[14] = "Year"
+colnames(Spending_24)[14] = "Year"
+colnames(Spending_25)[14] = "Year"
+colnames(Spending_26)[14] = "Year"
+
+
+
+## Win-Loss
+
+# Set of urls for league WL information etc from 2012-2022
+URL_Sites <- c("https://www.nfl.com/standings/league/2013/REG",
+                         "https://www.nfl.com/standings/league/2014/REG",
+                         "https://www.nfl.com/standings/league/2015/REG",
+                         "https://www.nfl.com/standings/league/2016/REG",
+                         "https://www.nfl.com/standings/league/2017/REG",
+                         "https://www.nfl.com/standings/league/2018/REG",
+                         "https://www.nfl.com/standings/league/2019/REG",
+                         "https://www.nfl.com/standings/league/2020/REG",
+                         "https://www.nfl.com/standings/league/2021/REG",
+                         "https://www.nfl.com/standings/league/2022/REG")
+
+# Scrape all urls into the Win_DF list, will end up with list with one tibble for each year of data
+Win_DF = list()
+Year_Vec = seq(2013, 2022, by=1)
+
+# Grab table of values and store
+for(i in 1:10){
+  Win_URL <- read_html(URL_Sites[i])
+  Winning = Win_URL %>% html_nodes("table") %>% html_table
+  Win_Temp = Winning[[1]]
+  names(Win_Temp) = c( "Team", "W", "L",  "T",  "W_PCT",  "PF",   "PA",  "Net_pts",  "Home", "Road", "Div",     
+                        "Div_Pct",  "Conf", "Conf_Pct",  "Non_Conf", "Strk",  "Last_5" )
+  Win_DF[[i]] = Win_Temp %>% mutate(Year = Year_Vec[i])
+}
+
+# Replace names in Win_DF with same format as Spending
+for(i in 1:10){
+  Win_DF[[i]]$Team[grepl("Falcons", Win_DF[[i]]$Team)] = "Falcons"
+  Win_DF[[i]]$Team[grepl("Bills", Win_DF[[i]]$Team)] = "Bills"
+  Win_DF[[i]]$Team[grepl("Buccaneers", Win_DF[[i]]$Team)] = "Buccaneers"
+  Win_DF[[i]]$Team[grepl("Ravens", Win_DF[[i]]$Team)] = "Ravens"
+  Win_DF[[i]]$Team[grepl("Bears", Win_DF[[i]]$Team)] = "Bears"
+  Win_DF[[i]]$Team[grepl("Bengals", Win_DF[[i]]$Team)] = "Bengals"
+  Win_DF[[i]]$Team[grepl("Browns", Win_DF[[i]]$Team)] = "Browns"
+  Win_DF[[i]]$Team[grepl("Cowboys", Win_DF[[i]]$Team)] = "Cowboys"
+  Win_DF[[i]]$Team[grepl("Broncos", Win_DF[[i]]$Team)] = "Broncos"
+  Win_DF[[i]]$Team[grepl("Lions", Win_DF[[i]]$Team)] = "Lions"
+  Win_DF[[i]]$Team[grepl("Packers", Win_DF[[i]]$Team)] = "Packers"
+  Win_DF[[i]]$Team[grepl("Titans", Win_DF[[i]]$Team)] = "Titans"
+  Win_DF[[i]]$Team[grepl("Colts", Win_DF[[i]]$Team)] = "Colts"
+  Win_DF[[i]]$Team[grepl("Chiefs", Win_DF[[i]]$Team)] = "Chiefs"
+  Win_DF[[i]]$Team[grepl("Raiders", Win_DF[[i]]$Team)] = "Raiders"
+  Win_DF[[i]]$Team[grepl("Rams", Win_DF[[i]]$Team)] = "Rams"
+  Win_DF[[i]]$Team[grepl("Dolphins", Win_DF[[i]]$Team)] = "Dolphins"
+  Win_DF[[i]]$Team[grepl("Vikings", Win_DF[[i]]$Team)] = "Vikings"
+  Win_DF[[i]]$Team[grepl("Patriots", Win_DF[[i]]$Team)] = "Patriots"
+  Win_DF[[i]]$Team[grepl("Saints", Win_DF[[i]]$Team)] = "Saints"
+  Win_DF[[i]]$Team[grepl("Giants", Win_DF[[i]]$Team)] = "Giants"
+  Win_DF[[i]]$Team[grepl("Jets", Win_DF[[i]]$Team)] = "Jets"
+  Win_DF[[i]]$Team[grepl("Eagles", Win_DF[[i]]$Team)] = "Eagles"
+  Win_DF[[i]]$Team[grepl("Cardinals", Win_DF[[i]]$Team)] = "Cardinals"
+  Win_DF[[i]]$Team[grepl("Steelers", Win_DF[[i]]$Team)] = "Steelers"
+  Win_DF[[i]]$Team[grepl("Chargers", Win_DF[[i]]$Team)] = "Chargers"
+  Win_DF[[i]]$Team[grepl("49ers", Win_DF[[i]]$Team)] = "49ers"
+  Win_DF[[i]]$Team[grepl("Seahawks", Win_DF[[i]]$Team)] = "Seahawks"
+  Win_DF[[i]]$Team[grepl("Commanders", Win_DF[[i]]$Team)] = "Commanders"
+  Win_DF[[i]]$Team[grepl("Panthers", Win_DF[[i]]$Team)] = "Panthers"
+  Win_DF[[i]]$Team[grepl("Jaguars", Win_DF[[i]]$Team)] = "Jaguars"
+  Win_DF[[i]]$Team[grepl("Texans", Win_DF[[i]]$Team)] = "Texans"
+}
+
+Win_13 = Win_DF[[1]]
+Win_14 = Win_DF[[2]]
+Win_15 = Win_DF[[3]]
+Win_16 = Win_DF[[4]]
+Win_17 = Win_DF[[5]]
+Win_18 = Win_DF[[6]]
+Win_19 = Win_DF[[7]]
+Win_20 = Win_DF[[8]]
+Win_21 = Win_DF[[9]]
+Win_22 = Win_DF[[10]]
+
+
+
+## Combine dataframes
+
+# Merge Spending DFs together
+Spending_List = list(Spending_13, Spending_14, Spending_15, Spending_16, Spending_17, 
+                    Spending_18, Spending_19, Spending_20, Spending_21, Spending_22, Spending_23, Spending_24, Spending_25, Spending_26)
+
+Grand_Spending = Spending_List %>% reduce(full_join, by=colnames(Spending_List))
+Grand_Spending = Grand_Spending[order(Grand_Spending$Team ),]
+
+# Merge Winning DFs together
+Win_List = list(Win_13, Win_14, Win_15, Win_16, Win_17, Win_18, Win_19, Win_20, Win_21, Win_22)
+Grand_Win = Win_List %>% reduce(full_join, by=colnames(Win_List))
+Grand_Win = Grand_Win[order(Grand_Win$Team),]
+
+# Merge Winning and Spending
+# Omits years 2023, 2024, and 2025 because there is no winning data for those years
+Grand_DF = merge(Grand_Win, Grand_Spending, by=c("Team", "Year"))
+
+# Add cap total column
+capTotals = read.csv("CapTotals.csv")
+Grand_DF = merge(Grand_DF, capTotals, by="Year")
+Grand_DF = Grand_DF[order(Grand_DF$Team),]
+Grand_DF = Grand_DF %>% rename(Cap_Total = X.CapTotal)
+
+# Add spending percent columns
+Grand_DF = Grand_DF %>% mutate(QB_PCT = QB/Cap_Total,
+                            RB_PCT = RB/Cap_Total,
+                            WR_PCT = WR/Cap_Total,
+                            TE_PCT = TE/Cap_Total,
+                            OL_PCT = OL/Cap_Total,
+                            Offense_PCT = Offense/Cap_Total,
+                            IDL_PCT = IDL/Cap_Total,
+                            EDGE_PCT = EDGE/Cap_Total,
+                            LB_PCT = LB/Cap_Total,
+                            S_PCT = S/Cap_Total,
+                            CB_PCT = CB/Cap_Total,
+                            Defense_PCT = Defense/Cap_Total)
+
+Pos_Vec = c("QB","RB","WR","TE","OL","IDL","EDGE","LB","S","CB")
+Pos_Vec_PCT = c("QB_PCT","RB_PCT","WR_PCT","TE_PCT","OL_PCT","IDL_PCT","EDGE_PCT","LB_PCT","S_PCT","CB_PCT")
+```
+
+```{r}
+#### Superstar Effect
+
+# Top
+Top_QB_Value = summary(Grand_DF$QB_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_QB = ifelse((QB_PCT > Top_QB_Value), TRUE, FALSE))
+
+Top_RB_Value = summary(Grand_DF$RB_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_RB = ifelse((RB_PCT > Top_RB_Value), TRUE, FALSE))
+
+Top_WR_Value = summary(Grand_DF$WR_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_WR = ifelse((WR_PCT > Top_WR_Value), TRUE, FALSE))
+
+Top_TE_Value = summary(Grand_DF$TE_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_TE = ifelse((TE_PCT > Top_TE_Value), TRUE, FALSE))
+
+Top_OL_Value = summary(Grand_DF$OL_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_OL = ifelse((OL_PCT > Top_OL_Value), TRUE, FALSE))
+
+Top_IDL_Value = summary(Grand_DF$IDL_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_IDL = ifelse((IDL_PCT > Top_IDL_Value), TRUE, FALSE))
+
+Top_EDGE_Value = summary(Grand_DF$EDGE_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_EDGE = ifelse((EDGE_PCT > Top_EDGE_Value), TRUE, FALSE))
+
+Top_LB_Value = summary(Grand_DF$LB_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_LB = ifelse((LB_PCT > Top_LB_Value), TRUE, FALSE))
+
+Top_S_Value = summary(Grand_DF$S_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_S = ifelse((S_PCT > Top_S_Value), TRUE, FALSE))
+
+Top_CB_Value = summary(Grand_DF$CB_PCT)[["3rd Qu."]]
+Grand_DF = Grand_DF %>% transform(Top_CB = ifelse((CB_PCT > Top_CB_Value), TRUE, FALSE))
+
+
+
+# Bottom
+Bot_QB_Value = summary(Grand_DF$QB_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_QB = ifelse((QB_PCT < Bot_QB_Value), TRUE, FALSE))
+
+Bot_RB_Value = summary(Grand_DF$RB_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_RB = ifelse((RB_PCT < Bot_RB_Value), TRUE, FALSE))
+
+Bot_WR_Value = summary(Grand_DF$WR_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_WR = ifelse((WR_PCT < Bot_WR_Value), TRUE, FALSE))
+
+Bot_TE_Value = summary(Grand_DF$TE_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_TE = ifelse((TE_PCT < Bot_TE_Value), TRUE, FALSE))
+
+Bot_OL_Value = summary(Grand_DF$OL_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_OL = ifelse((OL_PCT < Bot_OL_Value), TRUE, FALSE))
+
+Bot_IDL_Value = summary(Grand_DF$IDL_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_IDL = ifelse((IDL_PCT < Bot_IDL_Value), TRUE, FALSE))
+
+Bot_EDGE_Value = summary(Grand_DF$EDGE_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_EDGE = ifelse((EDGE_PCT < Bot_EDGE_Value), TRUE, FALSE))
+
+Bot_LB_Value = summary(Grand_DF$LB_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_LB = ifelse((LB_PCT < Bot_LB_Value), TRUE, FALSE))
+
+Bot_S_Value = summary(Grand_DF$S_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_S = ifelse((S_PCT < Bot_S_Value), TRUE, FALSE))
+
+Bot_CB_Value = summary(Grand_DF$CB_PCT)[["1st Qu."]]
+Grand_DF = Grand_DF %>% transform(Bot_CB = ifelse((CB_PCT < Bot_CB_Value), TRUE, FALSE))
+
+
+
+## Analysis
+
+Top_Spending_WPCT = lm(W_PCT~Top_QB+Top_RB+Top_WR+Top_TE+Top_OL+Top_IDL+Top_EDGE+Top_LB+Top_S+Top_CB, data=Grand_DF)
+summary(Top_Spending_WPCT)
+# Significant: ***EDGE, **QB, *S, *LB, .OL
+
+Top_Spending_PF = lm(PF~Top_QB+Top_RB+Top_WR+Top_TE+Top_OL+Top_IDL+Top_EDGE+Top_LB+Top_S+Top_CB, data=Grand_DF)
+summary(Top_Spending_PF)
+# Significant: **EDGE, *QB, .S, .LB
+
+Top_Spending_PA = lm(PA~Top_QB+Top_RB+Top_WR+Top_TE+Top_OL+Top_IDL+Top_EDGE+Top_LB+Top_S+Top_CB, data=Grand_DF)
+summary(Top_Spending_PA)
+# Significant: *RB, *S, *CB, .EDGE
+
+
+
+Bot_Spending_WPCT = lm(W_PCT~Bot_QB+Bot_RB+Bot_WR+Bot_TE+Bot_OL+Bot_IDL+Bot_EDGE+Bot_LB+Bot_S+Bot_CB, data=Grand_DF)
+summary(Bot_Spending_WPCT)
+# Significant: **EDGE, .WR
+
+Bot_Spending_PF = lm(PF~Bot_QB+Bot_RB+Bot_WR+Bot_TE+Bot_OL+Bot_IDL+Bot_EDGE+Bot_LB+Bot_S+Bot_CB, data=Grand_DF)
+summary(Bot_Spending_PF)
+# Significant: **WR
+
+Bot_Spending_PA = lm(PA~Bot_QB+Bot_RB+Bot_WR+Bot_TE+Bot_OL+Bot_IDL+Bot_EDGE+Bot_LB+Bot_S+Bot_CB, data=Grand_DF)
+summary(Bot_Spending_PA)
+# Significant: .EDGE, .S, .CB
+
+
+## Graphics
+
+# Top_EDGE = Grand_DF %>% filter(Top_EDGE == TRUE)
+# Bot_EDGE = Grand_DF %>% filter(Bot_EDGE == TRUE)
+# Oth_EDGE = Grand_DF %>% filter(Top_EDGE == FALSE & Bot_EDGE == FALSE)
+# EDGE_plot = ggplot() + 
+#     geom_point(aes(x=Year, y=W_PCT, group=Team), data=Grand_DF) + 
+#     geom_line(aes(x=Year, y=W_PCT, color="red", group=Team), data=Top_EDGE) +
+#     geom_line(aes(x=Year, y=W_PCT, color="lightblue", group=Team), data=Bot_EDGE) +
+#     geom_line(aes(x=Year, y=W_PCT, group=Team), data=Oth_EDGE, alpha=0.2)
+# EDGE_plot
+
+# Edge test
+Grand_DF = Grand_DF %>% mutate(EDGE_Spending = case_when(Bot_EDGE == TRUE ~ 0, 
+                                                         Bot_EDGE == FALSE & Top_EDGE == FALSE ~ 1, 
+                                                         Top_EDGE == TRUE ~ 2))
+
+EDGE_Summary = summarize(Grand_DF %>% group_by(EDGE_Spending, Year), means = mean(W_PCT))
+EDGE_Summary
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(EDGE_Spending))) + 
+    theme_bw() + 
+    ggtitle("Edge Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "Edge Spending", 
+                         labels = c("Bottom", "Neither", "Top"), 
+                         values = c("red", "lightgrey", "blue")) +
+    geom_line(data=EDGE_Summary, aes(x=factor(Year), y=means, color=factor(EDGE_Spending), group=factor(EDGE_Spending)))
+
+# Safety test
+Grand_DF = Grand_DF %>% mutate(S_Spending = case_when(Bot_S == TRUE ~ 0, 
+                                                         Bot_S == FALSE & Top_S == FALSE ~ 1, 
+                                                         Top_S == TRUE ~ 2))
+
+S_Summary = summarize(Grand_DF %>% group_by(S_Spending, Year), means = mean(W_PCT))
+S_Summary
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(S_Spending))) + 
+    theme_bw() + 
+    ggtitle("Safety Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "Safety Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=S_Summary, aes(x=factor(Year), y=means, color=factor(S_Spending), group=factor(S_Spending)))
+
+# QB test
+Grand_DF = Grand_DF %>% mutate(QB_Spending = case_when(Bot_QB == TRUE ~ 0, 
+                                                         Bot_QB == FALSE & Top_QB == FALSE ~ 1, 
+                                                         Top_QB == TRUE ~ 2))
+
+QB_Summary = summarize(Grand_DF %>% group_by(QB_Spending, Year), means = mean(W_PCT))
+QB_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(QB_Spending))) + 
+    theme_bw() + 
+    ggtitle("QB Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "QB Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=QB_Summary, aes(x=factor(Year), y=means, color=factor(QB_Spending), group=factor(QB_Spending)))
+
+
+view(Grand_DF %>% filter(Bot_QB == TRUE))
+
+# LB test
+Grand_DF = Grand_DF %>% mutate(LB_Spending = case_when(Bot_LB == TRUE ~ 0, 
+                                                       Bot_LB == FALSE & Top_LB == FALSE ~ 1, 
+                                                       Top_LB == TRUE ~ 2))
+
+LB_Summary = summarize(Grand_DF %>% group_by(LB_Spending, Year), means = mean(W_PCT))
+LB_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(LB_Spending))) + 
+    theme_bw() + 
+    ggtitle("LB Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "LB Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=LB_Summary, aes(x=factor(Year), y=means, color=factor(LB_Spending), group=factor(LB_Spending)))
+
+# CB test
+Grand_DF = Grand_DF %>% mutate(CB_Spending = case_when(Bot_CB == TRUE ~ 0, 
+                                                       Bot_CB == FALSE & Top_CB == FALSE ~ 1, 
+                                                       Top_CB == TRUE ~ 2))
+
+CB_Summary = summarize(Grand_DF %>% group_by(CB_Spending, Year), means = mean(W_PCT))
+CB_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(CB_Spending))) + 
+    theme_bw() + 
+    ggtitle("CB Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "CB Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=CB_Summary, aes(x=factor(Year), y=means, color=factor(CB_Spending), group=factor(CB_Spending)))
+
+# TE test
+Grand_DF = Grand_DF %>% mutate(TE_Spending = case_when(Bot_TE == TRUE ~ 0, 
+                                                       Bot_TE == FALSE & Top_TE == FALSE ~ 1, 
+                                                       Top_TE == TRUE ~ 2))
+
+TE_Summary = summarize(Grand_DF %>% group_by(TE_Spending, Year), means = mean(W_PCT))
+TE_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(TE_Spending))) + 
+    theme_bw() + 
+    ggtitle("TE Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "TE Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=TE_Summary, aes(x=factor(Year), y=means, color=factor(TE_Spending), group=factor(TE_Spending)))
+
+# WR test
+Grand_DF = Grand_DF %>% mutate(WR_Spending = case_when(Bot_WR == TRUE ~ 0, 
+                                                       Bot_WR == FALSE & Top_WR == FALSE ~ 1, 
+                                                       Top_WR == TRUE ~ 2))
+
+WR_Summary = summarize(Grand_DF %>% group_by(WR_Spending, Year), means = mean(W_PCT))
+WR_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(WR_Spending))) + 
+    theme_bw() + 
+    ggtitle("WR Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "WR Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=WR_Summary, aes(x=factor(Year), y=means, color=factor(WR_Spending), group=factor(WR_Spending)))
+
+# IDL test
+Grand_DF = Grand_DF %>% mutate(IDL_Spending = case_when(Bot_IDL == TRUE ~ 0, 
+                                                       Bot_IDL == FALSE & Top_IDL == FALSE ~ 1, 
+                                                       Top_IDL == TRUE ~ 2))
+
+IDL_Summary = summarize(Grand_DF %>% group_by(IDL_Spending, Year), means = mean(W_PCT))
+IDL_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(IDL_Spending))) + 
+    theme_bw() + 
+    ggtitle("IDL Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "IDL Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=IDL_Summary, aes(x=factor(Year), y=means, color=factor(IDL_Spending), group=factor(IDL_Spending)))
+
+# OL test
+Grand_DF = Grand_DF %>% mutate(OL_Spending = case_when(Bot_OL == TRUE ~ 0, 
+                                                       Bot_OL == FALSE & Top_OL == FALSE ~ 1, 
+                                                       Top_OL == TRUE ~ 2))
+
+OL_Summary = summarize(Grand_DF %>% group_by(OL_Spending, Year), means = mean(W_PCT))
+OL_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(OL_Spending))) + 
+    theme_bw() + 
+    ggtitle("OL Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "OL Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=OL_Summary, aes(x=factor(Year), y=means, color=factor(OL_Spending), group=factor(OL_Spending)))
+
+# RB test
+Grand_DF = Grand_DF %>% mutate(RB_Spending = case_when(Bot_RB == TRUE ~ 0, 
+                                                       Bot_RB == FALSE & Top_RB == FALSE ~ 1, 
+                                                       Top_RB == TRUE ~ 2))
+
+RB_Summary = summarize(Grand_DF %>% group_by(RB_Spending, Year), means = mean(W_PCT))
+RB_Summary
+
+
+ggplot(Grand_DF) + geom_point(aes(x=factor(Year), y=W_PCT, group=Team, color=factor(RB_Spending))) + 
+    theme_bw() + 
+    ggtitle("RB Spending") + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    scale_color_manual(name = "RB Spending", 
+                       labels = c("Bottom", "Neither", "Top"), 
+                       values = c("red", "lightgrey", "blue")) +
+    geom_line(data=RB_Summary, aes(x=factor(Year), y=means, color=factor(RB_Spending), group=factor(RB_Spending)))
+
+
+cor.test(Grand_DF$QB_PCT, lag(Grand_DF$QB_PCT))
+cor.test(Grand_DF$EDGE_PCT, lag(Grand_DF$EDGE_PCT))
+```
+
+```{r}
+#### Optimal Positions
+
+# Position plot
+pos_plot = Grand_DF %>% ggplot() + 
+    geom_smooth(aes(x=QB_PCT, y=W_PCT, color="QB"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=RB_PCT, y=W_PCT, color="RB"), method=lm, formula = y ~ x + I(x^2), se=FALSE) +
+    geom_smooth(aes(x=WR_PCT, y=W_PCT, color="WR"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=TE_PCT, y=W_PCT, color="TE"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=OL_PCT, y=W_PCT, color="OL"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=IDL_PCT, y=W_PCT, color="IDL"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=EDGE_PCT, y=W_PCT, color="EDGE"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=LB_PCT, y=W_PCT, color="LB"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=S_PCT, y=W_PCT, color="S"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    geom_smooth(aes(x=CB_PCT, y=W_PCT, color="CB"), method=lm, formula = y ~ x + I(x^2), se=FALSE) + 
+    theme_bw() + 
+    scale_color_manual(name = "Position", 
+                       breaks = c("QB","RB","WR","TE","OL","IDL","EDGE","LB","S","CB"),
+                       values = c(QB="purple", RB="red", WR="lightgreen", TE="darkgreen", OL="orange", 
+                                  IDL="yellow", EDGE="hotpink", LB="blue", S="pink", CB="turquoise")) +
+    ggtitle("Win Percent vs Position Spending Percent") + 
+    xlab("Spending Percent") + 
+    ylab("Win Percent")
+
+ggplotly(pos_plot)
+
+QB_max_y = max(ggplot_build(pos_plot)$data[[1]]$y)
+QB_max_x = 0.2377
+
+RB_max_y = max(ggplot_build(pos_plot)$data[[2]]$y)
+RB_max_x = 0.1274
+
+WR_max_y = max(ggplot_build(pos_plot)$data[[3]]$y)
+WR_max_x = 0.1475
+
+TE_max_y = max(ggplot_build(pos_plot)$data[[4]]$y)
+TE_max_x = 0.1148
+
+OL_max_y = max(ggplot_build(pos_plot)$data[[5]]$y)
+OL_max_x = 0.2057
+
+IDL_max_y = max(ggplot_build(pos_plot)$data[[6]]$y)
+IDL_max_x = 0.0920
+
+EDGE_max_y = max(ggplot_build(pos_plot)$data[[7]]$y)
+EDGE_max_x = 0.2048
+
+LB_max_y = max(ggplot_build(pos_plot)$data[[8]]$y)
+LB_max_x = 0.1710
+
+S_max_y = max(ggplot_build(pos_plot)$data[[9]]$y)
+S_max_x = 0.1368
+
+CB_max_y = max(ggplot_build(pos_plot)$data[[10]]$y)
+CB_max_x = 0.2199
+
+# Optimal metrics
+optimal_t = which.max((((abs(Grand_DF$QB_PCT-QB_max_x))/QB_max_x)*4.016) + 
+    (((abs(Grand_DF$RB_PCT-RB_max_x))/RB_max_x)*1.771) + 
+    (((abs(Grand_DF$WR_PCT-WR_max_x))/WR_max_x)*1.922) + 
+    (((abs(Grand_DF$TE_PCT-TE_max_x))/TE_max_x)*2.072) + 
+    (((abs(Grand_DF$OL_PCT-OL_max_x))/OL_max_x)*1.864) + 
+    (((abs(Grand_DF$IDL_PCT-IDL_max_x))/IDL_max_x)*1.899) + 
+    (((abs(Grand_DF$EDGE_PCT-EDGE_max_x))/EDGE_max_x)*4.835) + 
+    (((abs(Grand_DF$LB_PCT-LB_max_x))/LB_max_x)*2.321) + 
+    (((abs(Grand_DF$S_PCT-S_max_x))/S_max_x)*4.177) + 
+    (((abs(Grand_DF$CB_PCT-CB_max_x))/CB_max_x)*2.121))
+view(Grand_DF[optimal_t, ])
+
+
+
+Grand_DF = Grand_DF %>% mutate(optimal_noT = (((abs(Grand_DF$QB_PCT-QB_max_x))/QB_max_x) + 
+                        ((abs(Grand_DF$RB_PCT-RB_max_x))/RB_max_x) + 
+                        ((abs(Grand_DF$WR_PCT-WR_max_x))/WR_max_x) + 
+                        ((abs(Grand_DF$TE_PCT-TE_max_x))/TE_max_x) + 
+                        ((abs(Grand_DF$OL_PCT-OL_max_x))/OL_max_x) + 
+                        ((abs(Grand_DF$IDL_PCT-IDL_max_x))/IDL_max_x) + 
+                        ((abs(Grand_DF$EDGE_PCT-EDGE_max_x))/EDGE_max_x) + 
+                        ((abs(Grand_DF$LB_PCT-LB_max_x))/LB_max_x) + 
+                        ((abs(Grand_DF$S_PCT-S_max_x))/S_max_x) + 
+                        ((abs(Grand_DF$CB_PCT-CB_max_x))/CB_max_x)))
+
+view(Grand_DF %>% arrange(optimal_noT))
+
+#view(Grand_DF[optimal_noT, ])
+# 2013 Seahawks
+
+Grand_DF %>% ggplot(aes(x=optimal_noT, y=Grand_DF$W_PCT)) + geom_point() + geom_smooth(method = "lm")
+
+
+Grand_DF = Grand_DF %>% mutate(optimal_coef = (((abs(Grand_DF$QB_PCT-QB_max_x)/QB_max_x)*0.043225) + 
+                    ((abs(Grand_DF$RB_PCT-RB_max_x)/RB_max_x)*0.018375) + 
+                    ((abs(Grand_DF$WR_PCT-WR_max_x)/WR_max_x)*0.019576) + 
+                    ((abs(Grand_DF$TE_PCT-TE_max_x)/TE_max_x)*0.021009) + 
+                    ((abs(Grand_DF$OL_PCT-OL_max_x)/OL_max_x)*0.019075) + 
+                    ((abs(Grand_DF$IDL_PCT-IDL_max_x)/IDL_max_x)*0.020392) + 
+                    ((abs(Grand_DF$EDGE_PCT-EDGE_max_x)/EDGE_max_x)*0.050630) + 
+                    ((abs(Grand_DF$LB_PCT-LB_max_x)/LB_max_x)*0.024085) + 
+                    ((abs(Grand_DF$S_PCT-S_max_x)/S_max_x)*0.043468) + 
+                    ((abs(Grand_DF$CB_PCT-CB_max_x)/CB_max_x)*0.022380)))
+
+view(Grand_DF %>% arrange(optimal_coef))
+
+#view(Grand_DF[optimal_coef, ])
+# 2018 Vikings
+
+Grand_DF = Grand_DF %>% mutate(optimal_F = (((abs(Grand_DF$QB_PCT-QB_max_x)/QB_max_x)*6.1988) + 
+                                                   ((abs(Grand_DF$RB_PCT-RB_max_x)/RB_max_x)*1.6399) + 
+                                                   ((abs(Grand_DF$WR_PCT-WR_max_x)/WR_max_x)*3.6867) + 
+                                                   ((abs(Grand_DF$TE_PCT-TE_max_x)/TE_max_x)*5.4242) + 
+                                                   ((abs(Grand_DF$OL_PCT-OL_max_x)/OL_max_x)*0.6316) + 
+                                                   ((abs(Grand_DF$IDL_PCT-IDL_max_x)/IDL_max_x)*0.1352) + 
+                                                   ((abs(Grand_DF$EDGE_PCT-EDGE_max_x)/EDGE_max_x)*16.0885) + 
+                                                   ((abs(Grand_DF$LB_PCT-LB_max_x)/LB_max_x)*2.4630) + 
+                                                   ((abs(Grand_DF$S_PCT-S_max_x)/S_max_x)*16.0556) + 
+                                                   ((abs(Grand_DF$CB_PCT-CB_max_x)/CB_max_x)*4.5006)))
+
+view(Grand_DF %>% arrange(optimal_F))
+# 2021 Chiefs
+
+#Grand_DF = Grand_DF %>% mutate(optimal_ord = (((abs(Grand_DF$QB_PCT-QB_max_x)/QB_max_x)*15) + 
+#                                                ((abs(Grand_DF$RB_PCT-RB_max_x)/RB_max_x)*1) + 
+#                                                ((abs(Grand_DF$WR_PCT-WR_max_x)/WR_max_x)*1) + 
+#                                                ((abs(Grand_DF$TE_PCT-TE_max_x)/TE_max_x)*4) + 
+#                                                ((abs(Grand_DF$OL_PCT-OL_max_x)/OL_max_x)*1) + 
+#                                                ((abs(Grand_DF$IDL_PCT-IDL_max_x)/IDL_max_x)*1) + 
+#                                                ((abs(Grand_DF$EDGE_PCT-EDGE_max_x)/EDGE_max_x)*15) + 
+#                                                ((abs(Grand_DF$LB_PCT-LB_max_x)/LB_max_x)*4) + 
+#                                                ((abs(Grand_DF$S_PCT-S_max_x)/S_max_x)*15) + 
+#                                                ((abs(Grand_DF$CB_PCT-CB_max_x)/CB_max_x)*4)))
+#
+# view(Grand_DF %>% arrange(optimal_ord))
+# ???
+
+# Optimal by position
+QB_opt = which.min(((Grand_DF$QB_PCT-QB_max_x)^2)/QB_max_x)
+#view(Grand_DF[QB_opt, ])
+RB_opt = which.min(((Grand_DF$RB_PCT-RB_max_x)^2)/RB_max_x)
+#view(Grand_DF[RB_opt, ])
+WR_opt = which.min(((Grand_DF$WR_PCT-WR_max_x)^2)/WR_max_x)
+#view(Grand_DF[WR_opt, ])
+TE_opt = which.min(((Grand_DF$TE_PCT-TE_max_x)^2)/TE_max_x)
+#view(Grand_DF[TE_opt, ])
+OL_opt = which.min(((Grand_DF$OL_PCT-OL_max_x)^2)/OL_max_x)
+#view(Grand_DF[OL_opt, ])
+IDL_opt = which.min(((Grand_DF$IDL_PCT-IDL_max_x)^2)/IDL_max_x)
+#view(Grand_DF[IDL_opt, ])
+EDGE_opt = which.min(((Grand_DF$EDGE_PCT-EDGE_max_x)^2)/EDGE_max_x)
+#view(Grand_DF[EDGE_opt, ])
+LB_opt = which.min(((Grand_DF$LB_PCT-LB_max_x)^2)/LB_max_x)
+#view(Grand_DF[LB_opt, ])
+S_opt = which.min(((Grand_DF$S_PCT-S_max_x)^2)/S_max_x)
+#view(Grand_DF[S_opt, ])
+CB_opt = which.min(((Grand_DF$CB_PCT-CB_max_x)^2)/CB_max_x)
+#view(Grand_DF[CB_opt, ])
+```
+
+```{r}
+#### Linear models
+
+Grand_DF_long = Grand_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+means = Grand_DF_long %>% group_by(Position_PCT) %>%
+    mutate(Pos_PCT_mean = mean(Value_PCT), mean_diff = Value_PCT - Pos_PCT_mean) %>%
+    select(Team, Year, Position_PCT, Value_PCT, Pos_PCT_mean, mean_diff)
+
+## Team level linear models
+Team_WPCT_Mod = lm(W_PCT~QB_PCT+RB_PCT+WR_PCT+TE_PCT+OL_PCT+IDL_PCT+EDGE_PCT+LB_PCT+S_PCT+CB_PCT, data=Grand_DF)
+summary(Team_WPCT_Mod)
+anova(Team_WPCT_Mod)
+# Significant: ***EDGE, ***S, ***QB, *LB, *CB, *TE, .WR, .IDL, .OL, .RB
+
+# Standardized variables
+Grand_DF = Grand_DF %>% mutate(std_QB = (QB_PCT-mean(QB_PCT))/sd(QB_PCT),
+                    std_RB = (RB_PCT-mean(RB_PCT))/sd(RB_PCT),
+                    std_WR = (WR_PCT-mean(WR_PCT))/sd(WR_PCT),
+                    std_TE = (TE_PCT-mean(TE_PCT))/sd(TE_PCT),
+                    std_OL = (OL_PCT-mean(OL_PCT))/sd(OL_PCT),
+                    std_IDL = (IDL_PCT-mean(IDL_PCT))/sd(IDL_PCT),
+                    std_EDGE = (EDGE_PCT-mean(EDGE_PCT))/sd(EDGE_PCT),
+                    std_LB = (LB_PCT-mean(LB_PCT))/sd(LB_PCT),
+                    std_S = (S_PCT-mean(S_PCT))/sd(S_PCT),
+                    std_CB = (CB_PCT-mean(CB_PCT))/sd(CB_PCT))
+
+
+Team_WPCT_Mod_s = lm(W_PCT~std_QB+std_RB+std_WR+std_TE+std_OL+std_IDL+std_EDGE+std_LB+std_S+std_CB, data=Grand_DF)
+summary(Team_WPCT_Mod_s)
+
+# Variable importance order
+summary(lm(W_PCT~EDGE_PCT+S_PCT+QB_PCT+LB_PCT+CB_PCT+TE_PCT+WR_PCT+OL_PCT+IDL_PCT+RB_PCT, data=Grand_DF))
+```
+
+```{r}
+#### Single-Team Graphs
+
+## Vikings DF
+Vikings_DF = Grand_DF[Grand_DF$Team == "Vikings", ]
+
+# Position stacked bar chart
+Vikings_DF = Vikings_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Vikings_pos = Vikings_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("RB_PCT","OL_PCT", "IDL_PCT", "WR_PCT", "TE_PCT", "CB_PCT", "LB_PCT", "QB_PCT", "S_PCT", "EDGE_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Minnesota Vikings Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Running Back","Offensive Line","Interior Defensive Line","Wide Receiver","Tight End",
+                                                  "Cornerback","Linebacker","Quarterback","Safety","Edge Rusher")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Vikings_win = Vikings_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+#    geom_line() + 
+    ggtitle("Minnesota Vikings Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Vikings_pos, Vikings_win, ncol=2)
+
+# Other
+
+ggplot(Vikings_DF, aes(x=Year, y=QB/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=RB/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=WR/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=TE/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=OL/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=Offense/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+
+ggplot(Vikings_DF, aes(x=Year, y=IDL/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=EDGE/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=LB/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=S/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=CB/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+ggplot(Vikings_DF, aes(x=Year, y=Defense/Cap_Total)) + geom_point() + geom_smooth(method = "lm", se = FALSE)
+
+
+## Chiefs DF
+Chiefs_DF = Grand_DF[Grand_DF$Team == "Chiefs", ]
+
+# Position stacked bar chart
+Chiefs_DF = Chiefs_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Chiefs_pos = Chiefs_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("QB_PCT","RB_PCT","WR_PCT","TE_PCT","OL_PCT","IDL_PCT","EDGE_PCT","LB_PCT","S_PCT","CB_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Kansas City Chiefs Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Quarterback", "Runningback", "Wide Receiver", "Tight End", "Offensive Line",
+                                                  "Interior Defensive Line", "Edge Rusher", "Linebacker", "Safety", "Cornerback")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Chiefs_win = Chiefs_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("Kansas City Chiefs Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Chiefs_pos, Chiefs_win, ncol=2)
+
+
+## Patriots DF
+Patriots_DF = Grand_DF[Grand_DF$Team == "Patriots", ]
+
+# Position stacked bar chart
+Patriots_DF = Patriots_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Patriots_pos = Patriots_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("QB_PCT","RB_PCT","WR_PCT","TE_PCT","OL_PCT","IDL_PCT","EDGE_PCT","LB_PCT","S_PCT","CB_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("New England Patriots Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Quarterback", "Runningback", "Wide Receiver", "Tight End", "Offensive Line",
+                                                  "Interior Defensive Line", "Edge Rusher", "Linebacker", "Safety", "Cornerback")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Patriots_win = Patriots_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("New England Patriots Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Patriots_pos, Patriots_win, ncol=2)
+
+
+## Lions DF
+Lions_DF = Grand_DF[Grand_DF$Team == "Lions", ]
+
+# Position stacked bar chart
+Lions_DF = Lions_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Lions_pos = Lions_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("QB_PCT","RB_PCT","WR_PCT","TE_PCT","OL_PCT","IDL_PCT","EDGE_PCT","LB_PCT","S_PCT","CB_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Detroit Lions Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Quarterback", "Runningback", "Wide Receiver", "Tight End", "Offensive Line",
+                                                  "Interior Defensive Line", "Edge Rusher", "Linebacker", "Safety", "Cornerback")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Lions_win = Lions_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("Detroit Lions Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Lions_pos, Lions_win, ncol=2)
+
+
+## Browns DF
+Browns_DF = Grand_DF[Grand_DF$Team == "Browns", ]
+
+# Position stacked bar chart
+Browns_DF = Browns_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Browns_pos = Browns_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("QB_PCT","RB_PCT","WR_PCT","TE_PCT","OL_PCT","IDL_PCT","EDGE_PCT","LB_PCT","S_PCT","CB_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Cleveland Browns Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Quarterback", "Runningback", "Wide Receiver", "Tight End", "Offensive Line",
+                                                  "Interior Defensive Line", "Edge Rusher", "Linebacker", "Safety", "Cornerback")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Browns_win = Browns_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("Cleveland Browns Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Browns_pos, Browns_win, ncol=2)
+
+## Packers DF
+Packers_DF = Grand_DF[Grand_DF$Team == "Packers", ]
+
+# Position stacked bar chart
+Packers_DF = Packers_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Packers_pos = Packers_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("RB_PCT","OL_PCT", "IDL_PCT", "WR_PCT", "TE_PCT", "CB_PCT", "LB_PCT", "QB_PCT", "S_PCT", "EDGE_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Green Bay Packers Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Running Back","Offensive Line","Interior Defensive Line","Wide Receiver","Tight End",
+                                                  "Cornerback","Linebacker","Quarterback","Safety","Edge Rusher")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Packers_win = Packers_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("Green Bay Packers Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Packers_pos, Packers_win, ncol=2)
+
+## Eagles DF
+Eagles_DF = Grand_DF[Grand_DF$Team == "Eagles", ]
+
+# Position stacked bar chart
+Eagles_DF = Eagles_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Eagles_pos = Eagles_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("RB_PCT","OL_PCT", "IDL_PCT", "WR_PCT", "TE_PCT", "CB_PCT", "LB_PCT", "QB_PCT", "S_PCT", "EDGE_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Philadelphia Eagles Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Running Back","Offensive Line","Interior Defensive Line","Wide Receiver","Tight End",
+                                                  "Cornerback","Linebacker","Quarterback","Safety","Edge Rusher")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Eagles_win = Eagles_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("Philadelphia Eagles Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Eagles_pos, Eagles_win, ncol=2)
+
+
+## Seahawks DF
+Seahawks_DF = Grand_DF[Grand_DF$Team == "Seahawks", ]
+
+# Position stacked bar chart
+Seahawks_DF = Seahawks_DF %>% pivot_longer(cols=any_of(Pos_Vec_PCT), names_to="Position_PCT", values_to="Value_PCT")
+
+Seahawks_pos = Seahawks_DF %>% ggplot(aes(fill=factor(Position_PCT, levels=c("QB_PCT","RB_PCT","WR_PCT","TE_PCT","OL_PCT","IDL_PCT","EDGE_PCT","LB_PCT","S_PCT","CB_PCT")), y=Value_PCT, x=factor(Year))) + 
+    geom_bar(position="fill", stat="identity") +
+    ggtitle("Seattle Seahawks Positional Spending") +
+    scale_fill_discrete(name="Position", labels=c("Quarterback", "Runningback", "Wide Receiver", "Tight End", "Offensive Line",
+                                                  "Interior Defensive Line", "Edge Rusher", "Linebacker", "Safety", "Cornerback")) +
+    xlab("Year") +
+    ylab("Percent of Spending") +
+    geom_text(aes(label=round((Value_PCT*100), 2)), size = 3, position = position_fill(vjust = 0.5), color="white") + 
+    theme_bw()
+
+Seahawks_win = Seahawks_DF %>% ggplot(aes(x=Year, y=W_PCT)) + 
+    geom_point() + 
+    geom_smooth(se=FALSE) + 
+    #    geom_line() + 
+    ggtitle("Seattle Seahawks Win Percentage") + 
+    ylim(0,1) + 
+    xlab("Year") + 
+    ylab("Win Percent") + 
+    theme_bw()
+
+grid.arrange(Seahawks_pos, Seahawks_win, ncol=2)
+```
+
+```{r}
+#### Future
+
+# Predict best team for the future
+Future_Spending = Grand_Spending %>% filter(Year %in% 2023)
+Future_Spending = merge(Future_Spending, capTotals, by="Year")
+Future_Spending = Future_Spending[order(Future_Spending$Team),]
+Future_Spending = rename(Future_Spending, Cap_Total = X.CapTotal)
+Future_Spending = Future_Spending %>% mutate(QB_PCT = QB/Cap_Total,
+                                             RB_PCT = RB/Cap_Total,
+                                             WR_PCT = WR/Cap_Total,
+                                             TE_PCT = TE/Cap_Total,
+                                             OL_PCT = OL/Cap_Total,
+                                             Offense_PCT = Offense/Cap_Total,
+                                             IDL_PCT = IDL/Cap_Total,
+                                             EDGE_PCT = EDGE/Cap_Total,
+                                             LB_PCT = LB/Cap_Total,
+                                             S_PCT = S/Cap_Total,
+                                             CB_PCT = CB/Cap_Total,
+                                             Defense_PCT = Defense/Cap_Total)
+
+Future_Spending = Future_Spending %>% mutate(fut_opt = which.min(((abs(Future_Spending$QB_PCT-QB_max_x))) + 
+                        ((abs(Future_Spending$RB_PCT-RB_max_x))) + 
+                        ((abs(Future_Spending$WR_PCT-WR_max_x))) + 
+                        ((abs(Future_Spending$TE_PCT-TE_max_x))) + 
+                        ((abs(Future_Spending$OL_PCT-OL_max_x))) + 
+                        ((abs(Future_Spending$IDL_PCT-IDL_max_x))) + 
+                        ((abs(Future_Spending$EDGE_PCT-EDGE_max_x))) + 
+                        ((abs(Future_Spending$LB_PCT-LB_max_x))) + 
+                        ((abs(Future_Spending$S_PCT-S_max_x))) + 
+                        ((abs(Future_Spending$CB_PCT-CB_max_x)))))
+view(Future_Spending %>% arrange(fut_opt))
+
+#view(Future_Spending[fut_opt, ])
+
+
+```
+
